@@ -738,22 +738,39 @@ export function normalizeScriptSearchResults(input: {
   result: any;
 }) {
   const list = Array.isArray(input.result?.list) ? input.result.list : [];
-  return list.map((item: any) => ({
-    id: String(item.id),
-    title: String(item.title || ''),
-    poster: item.poster || '',
-    episodes: Array.isArray(item.episodes) ? item.episodes : [],
-    episodes_titles: Array.isArray(item.episodes_titles)
-      ? item.episodes_titles
-      : [],
-    source: buildScriptSourceValue(input.scriptKey, input.sourceId),
-    source_name: `${input.scriptName} / ${input.sourceName}`,
-    year: item.year || '',
-    desc: item.desc || '',
-    type_name: item.type_name || '',
-    douban_id: item.douban_id || 0,
-    vod_remarks: item.vod_remarks,
-  }));
+  return list.map((item: any) => {
+    const titles = Array.isArray(item.episodes_titles) ? item.episodes_titles : [];
+    const episodes = Array.isArray(item.episodes)
+      ? item.episodes.map((episode: any, index: number) => {
+          const playUrl =
+            typeof episode === 'string'
+              ? episode
+              : String(episode?.playUrl || episode?.url || '');
+          return buildScriptPlayUrl({
+            scriptKey: input.scriptKey,
+            sourceId: input.sourceId,
+            lineId: String(episode?.lineId || item?.lineId || 'default'),
+            episodeIndex: index,
+            playUrl,
+          });
+        })
+      : [];
+
+    return {
+      id: String(item.id),
+      title: String(item.title || ''),
+      poster: item.poster || '',
+      episodes,
+      episodes_titles: titles,
+      source: buildScriptSourceValue(input.scriptKey, input.sourceId),
+      source_name: `${input.scriptName} / ${input.sourceName}`,
+      year: item.year || '',
+      desc: item.desc || '',
+      type_name: item.type_name || '',
+      douban_id: item.douban_id || 0,
+      vod_remarks: item.vod_remarks,
+    };
+  });
 }
 
 export function normalizeScriptDetailResult(input: {
@@ -790,7 +807,7 @@ export function normalizeScriptDetailResult(input: {
     const episodes = Array.isArray(playback.episodes) ? playback.episodes : [];
 
     episodes.forEach((episode: any, index: number) => {
-      const playUrl =
+      const rawPlayUrl =
         typeof episode === 'string'
           ? episode
           : String(episode?.playUrl || episode?.url || '');
@@ -798,6 +815,16 @@ export function normalizeScriptDetailResult(input: {
         typeof episode === 'object' && episode?.title
           ? String(episode.title)
           : String(titles[index] || `第${index + 1}集`);
+
+      const playbackSourceId = String(playback.sourceId || input.sourceId);
+      const lineId = String(playback.lineId || 'default');
+      const playUrl = buildScriptPlayUrl({
+        scriptKey: input.scriptKey,
+        sourceId: playbackSourceId,
+        lineId,
+        episodeIndex: index,
+        playUrl: rawPlayUrl,
+      });
 
       flattenedEpisodes.push(playUrl);
       flattenedTitles.push(`${playbackSourceName} / ${lineName} / ${episodeTitle}`);
@@ -894,5 +921,78 @@ export async function resolveScriptDetailPlaybacks(input: {
   return {
     ...input.result,
     playbacks: resolvedPlaybacks,
+  };
+}
+
+function encodeBase64Url(value: string) {
+  return Buffer.from(value, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+  return Buffer.from(`${normalized}${padding}`, 'base64').toString('utf8');
+}
+
+export function buildScriptPlayUrl(input: {
+  scriptKey: string;
+  sourceId: string;
+  lineId: string;
+  episodeIndex: number;
+  playUrl: string;
+}) {
+  const searchParams = new URLSearchParams({
+    key: input.scriptKey,
+    sourceId: input.sourceId,
+    lineId: input.lineId,
+    episodeIndex: String(input.episodeIndex),
+    playUrl: encodeBase64Url(input.playUrl),
+  });
+  return `/api/source-script/play?${searchParams.toString()}`;
+}
+
+export function parseScriptPlayUrlValue(value: string) {
+  return decodeBase64Url(value);
+}
+
+export async function resolveSavedScriptPlayUrl(input: {
+  key: string;
+  sourceId: string;
+  lineId: string;
+  episodeIndex: number;
+  playUrl: string;
+  configValues?: Record<string, string>;
+}) {
+  const script = await getEnabledSourceScriptByKey(input.key);
+  const { compiled, ctx } = await compileSourceScript(script, input.configValues);
+
+  if (typeof compiled.resolvePlayUrl !== 'function') {
+    return {
+      url: input.playUrl,
+      type: 'auto',
+      headers: {},
+    };
+  }
+
+  const result = await withTimeout(
+    Promise.resolve(
+      compiled.resolvePlayUrl(ctx, {
+        playUrl: input.playUrl,
+        sourceId: input.sourceId,
+        lineId: input.lineId,
+        episodeIndex: input.episodeIndex,
+      })
+    ),
+    DEFAULT_TIMEOUT_MS
+  );
+
+  return {
+    url: result?.url || input.playUrl,
+    type: result?.type || 'auto',
+    headers: result?.headers || {},
   };
 }

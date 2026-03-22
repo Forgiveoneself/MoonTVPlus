@@ -9,7 +9,6 @@ import { getProxyToken } from '@/lib/emby-token';
 import {
   executeSavedSourceScript,
   normalizeScriptDetailResult,
-  resolveScriptDetailPlaybacks,
   normalizeScriptSources,
   parseScriptSourceValue,
 } from '@/lib/source-script';
@@ -59,12 +58,6 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      const resolvedDetailResult = await resolveScriptDetailPlaybacks({
-        scriptKey: parsedScriptSource.scriptKey,
-        sourceId: parsedScriptSource.sourceId,
-        result: detailExecution.result,
-      });
-
       const normalized = normalizeScriptDetailResult({
         source: sourceCode,
         scriptKey: parsedScriptSource.scriptKey,
@@ -72,7 +65,7 @@ export async function GET(request: NextRequest) {
         sourceId: parsedScriptSource.sourceId,
         sourceName: sourceInfo.name,
         detailId: id,
-        result: resolvedDetailResult,
+        result: detailExecution.result,
       });
 
       return NextResponse.json(normalized);

@@ -2127,10 +2127,17 @@ function PlayPageClient() {
     let newUrl = detailData?.episodes[episodeIndex] || '';
 
     // 如果是小雅或 openlist 接口，先请求获取真实 URL
-    if (newUrl.startsWith('/api/xiaoya/play') || newUrl.startsWith('/api/openlist/play')) {
+    const isSpecialLazyPlayUrl =
+      newUrl.startsWith('/api/xiaoya/play') ||
+      newUrl.startsWith('/api/openlist/play') ||
+      newUrl.startsWith('/api/source-script/play');
+
+    if (isSpecialLazyPlayUrl) {
       try {
         // 保存原始URL（用于后续刷新）
-        currentXiaoyaUrlRef.current = newUrl;
+        if (newUrl.startsWith('/api/xiaoya/play') || newUrl.startsWith('/api/openlist/play')) {
+          currentXiaoyaUrlRef.current = newUrl;
+        }
 
         // 添加 format=json 参数
         const separator = newUrl.includes('?') ? '&' : '?';
@@ -3247,6 +3254,42 @@ function PlayPageClient() {
       }
     };
 
+    const getCachedSourcesData = (query: string): SearchResult[] => {
+      if (typeof window === 'undefined' || !query.trim()) {
+        return [];
+      }
+
+      try {
+        const cacheKey = `search_cache_${query.trim()}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (!cached) {
+          return [];
+        }
+
+        const cachedData = JSON.parse(cached);
+        const results = cachedData.filter(
+          (result: SearchResult) =>
+            normalizeTitle(result.title).toLowerCase() ===
+            normalizeTitle(videoTitleRef.current).toLowerCase() &&
+            (videoYearRef.current
+              ? result.year.toLowerCase() === videoYearRef.current.toLowerCase() ||
+                !result.year ||
+                result.year.trim() === '' ||
+                result.year === 'unknown' ||
+                !/^\d{4}$/.test(result.year)
+              : true) &&
+            (searchType
+              ? getType(result) === searchType
+              : true)
+        );
+
+        return applyCorrectionsToSources(results);
+      } catch (error) {
+        console.error('[Play] 读取缓存失败:', error);
+        return [];
+      }
+    };
+
     const initAll = async () => {
       if (currentSource === 'directplay') {
         if (!currentId) {
@@ -3333,22 +3376,34 @@ function PlayPageClient() {
       let sourcesInfo: SearchResult[] = [];
 
       if (currentSource && currentId) {
-        // 先快速获取当前源的详情
-        try {
-          // currentSource 已经是完整格式（如 'emby_wumei'）
-          // 如果是小雅源且有fileName参数，传递给API
-          const currentSourceDetail = await fetchSourceDetail(
-            currentSource,
-            currentId,
-            searchTitle || videoTitle,
-            currentSource === 'xiaoya' ? fileName : undefined
-          );
-          if (currentSourceDetail.length > 0) {
-            detailData = currentSourceDetail[0];
-            sourcesInfo = currentSourceDetail;
+        const cachedSources = getCachedSourcesData(searchTitle || videoTitle);
+        const cachedTarget = cachedSources.find(
+          (source) => source.source === currentSource && source.id === currentId
+        );
+
+        if (cachedTarget?.episodes?.length) {
+          detailData = cachedTarget;
+          sourcesInfo = cachedSources;
+          setAvailableSources(cachedSources);
+          setSourceSearchLoading(false);
+        } else {
+          // 先快速获取当前源的详情
+          try {
+            // currentSource 已经是完整格式（如 'emby_wumei'）
+            // 如果是小雅源且有fileName参数，传递给API
+            const currentSourceDetail = await fetchSourceDetail(
+              currentSource,
+              currentId,
+              searchTitle || videoTitle,
+              currentSource === 'xiaoya' ? fileName : undefined
+            );
+            if (currentSourceDetail.length > 0) {
+              detailData = currentSourceDetail[0];
+              sourcesInfo = currentSourceDetail;
+            }
+          } catch (err) {
+            console.error('获取当前源详情失败:', err);
           }
-        } catch (err) {
-          console.error('获取当前源详情失败:', err);
         }
 
         // 异步获取其他源信息，不阻塞播放
