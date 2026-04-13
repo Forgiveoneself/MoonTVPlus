@@ -261,17 +261,19 @@ export interface AdminConfig {
     };
   };
   MusicConfig?: {
-    // TuneHub音乐配置
-    TuneHubEnabled?: boolean; // 启用音乐功能
-    TuneHubBaseUrl?: string; // TuneHub API地址
-    TuneHubApiKey?: string; // TuneHub API Key
-    // OpenList缓存配置
-    OpenListCacheEnabled?: boolean; // 启用OpenList缓存
-    OpenListCacheURL?: string; // OpenList服务器地址
-    OpenListCacheUsername?: string; // OpenList用户名
-    OpenListCachePassword?: string; // OpenList密码
-    OpenListCachePath?: string; // OpenList缓存目录路径
-    OpenListCacheProxyEnabled?: boolean; // 启用缓存代理返回（默认开启）
+    Enabled?: boolean; // 启用音乐功能
+    BaseUrl?: string; // lxserver 地址
+    Token?: string; // lxserver x-user-token
+    // 兼容旧代码的遗留字段（待删除）
+    TuneHubEnabled?: boolean;
+    TuneHubBaseUrl?: string;
+    TuneHubApiKey?: string;
+    OpenListCacheEnabled?: boolean;
+    OpenListCacheURL?: string;
+    OpenListCacheUsername?: string;
+    OpenListCachePassword?: string;
+    OpenListCachePath?: string;
+    OpenListCacheProxyEnabled?: boolean;
   };
   AnimeSubscriptionConfig?: {
     Enabled: boolean; // 是否启用追番功能

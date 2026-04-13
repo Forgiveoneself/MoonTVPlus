@@ -3,6 +3,7 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
+import { MusicV2HistoryRecord, MusicV2PlaylistItem, MusicV2PlaylistRecord } from './music-v2';
 import { RedisAdapter } from './redis-adapter';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 import { userInfoCache } from './user-cache';
@@ -788,6 +789,165 @@ export abstract class BaseRedisStorage implements IStorage {
     const exists = await this.withRetry(() =>
       this.adapter.hGet(this.musicPlaylistSongsKey(playlistId), songKey)
     );
+    return exists !== null;
+  }
+
+  // ---------- Music V2 历史记录 ----------
+  private musicV2HistoryKey(userName: string) {
+    return `u:${userName}:music:v2:history`;
+  }
+
+  async listMusicV2History(userName: string): Promise<MusicV2HistoryRecord[]> {
+    const rows = await this.withRetry(() =>
+      this.adapter.hGetAll(this.musicV2HistoryKey(userName))
+    );
+
+    return Object.values(rows || {})
+      .filter(Boolean)
+      .map(value => JSON.parse(value as string) as MusicV2HistoryRecord)
+      .sort((a, b) => b.lastPlayedAt - a.lastPlayedAt);
+  }
+
+  async upsertMusicV2History(userName: string, record: MusicV2HistoryRecord): Promise<void> {
+    await this.withRetry(() =>
+      this.adapter.hSet(this.musicV2HistoryKey(userName), record.songId, JSON.stringify(record))
+    );
+  }
+
+  async batchUpsertMusicV2History(userName: string, records: MusicV2HistoryRecord[]): Promise<void> {
+    if (!records.length) return;
+    const payload: Record<string, string> = {};
+    for (const record of records) {
+      payload[record.songId] = JSON.stringify(record);
+    }
+    await this.withRetry(() => this.adapter.hSet(this.musicV2HistoryKey(userName), payload));
+  }
+
+  async deleteMusicV2History(userName: string, songId: string): Promise<void> {
+    await this.withRetry(() => this.adapter.hDel(this.musicV2HistoryKey(userName), songId));
+  }
+
+  async clearMusicV2History(userName: string): Promise<void> {
+    await this.withRetry(() => this.adapter.del(this.musicV2HistoryKey(userName)));
+  }
+
+  // ---------- Music V2 歌单 ----------
+  private musicV2PlaylistsKey(userName: string) {
+    return `u:${userName}:music:v2:playlists`;
+  }
+
+  private musicV2PlaylistKey(playlistId: string) {
+    return `music:v2:playlist:${playlistId}`;
+  }
+
+  private musicV2PlaylistItemsKey(playlistId: string) {
+    return `music:v2:playlist:${playlistId}:items`;
+  }
+
+  async createMusicV2Playlist(userName: string, playlist: {
+    id: string;
+    name: string;
+    description?: string;
+    cover?: string;
+  }): Promise<void> {
+    const now = Date.now();
+    const payload = {
+      id: playlist.id,
+      username: userName,
+      name: playlist.name,
+      description: playlist.description || '',
+      cover: playlist.cover || '',
+      song_count: '0',
+      created_at: now.toString(),
+      updated_at: now.toString(),
+    };
+
+    await this.withRetry(() => this.adapter.hSet(this.musicV2PlaylistKey(playlist.id), payload));
+    await this.withRetry(() =>
+      this.adapter.zAdd(this.musicV2PlaylistsKey(userName), { score: now, value: playlist.id })
+    );
+  }
+
+  async getMusicV2Playlist(playlistId: string): Promise<MusicV2PlaylistRecord | null> {
+    const data = await this.withRetry(() => this.adapter.hGetAll(this.musicV2PlaylistKey(playlistId)));
+    if (!data || Object.keys(data).length === 0) return null;
+    return {
+      id: data.id,
+      username: data.username,
+      name: data.name,
+      description: data.description || undefined,
+      cover: data.cover || undefined,
+      song_count: parseInt(data.song_count || '0', 10) || 0,
+      created_at: parseInt(data.created_at, 10),
+      updated_at: parseInt(data.updated_at, 10),
+    };
+  }
+
+  async listMusicV2Playlists(userName: string): Promise<MusicV2PlaylistRecord[]> {
+    const playlistIds = await this.withRetry(() => this.adapter.zRange(this.musicV2PlaylistsKey(userName), 0, -1));
+    const playlists: MusicV2PlaylistRecord[] = [];
+    for (const playlistId of playlistIds || []) {
+      const playlist = await this.getMusicV2Playlist(ensureString(playlistId));
+      if (playlist) playlists.push(playlist);
+    }
+    return playlists.sort((a, b) => b.updated_at - a.updated_at);
+  }
+
+  async updateMusicV2Playlist(playlistId: string, updates: {
+    name?: string;
+    description?: string;
+    cover?: string;
+    song_count?: number;
+  }): Promise<void> {
+    const payload: Record<string, string> = {
+      updated_at: Date.now().toString(),
+    };
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.description !== undefined) payload.description = updates.description || '';
+    if (updates.cover !== undefined) payload.cover = updates.cover || '';
+    if (updates.song_count !== undefined) payload.song_count = String(updates.song_count);
+    await this.withRetry(() => this.adapter.hSet(this.musicV2PlaylistKey(playlistId), payload));
+  }
+
+  async deleteMusicV2Playlist(playlistId: string): Promise<void> {
+    const playlist = await this.getMusicV2Playlist(playlistId);
+    if (!playlist) return;
+    await this.withRetry(() => this.adapter.zRem(this.musicV2PlaylistsKey(playlist.username), playlistId));
+    await this.withRetry(() => this.adapter.del(this.musicV2PlaylistKey(playlistId)));
+    await this.withRetry(() => this.adapter.del(this.musicV2PlaylistItemsKey(playlistId)));
+  }
+
+  async addMusicV2PlaylistItem(playlistId: string, item: MusicV2PlaylistItem): Promise<void> {
+    await this.withRetry(() =>
+      this.adapter.hSet(this.musicV2PlaylistItemsKey(playlistId), item.songId, JSON.stringify(item))
+    );
+    const items = await this.listMusicV2PlaylistItems(playlistId);
+    const playlist = await this.getMusicV2Playlist(playlistId);
+    await this.updateMusicV2Playlist(playlistId, {
+      song_count: items.length,
+      cover: playlist?.cover || item.cover,
+    });
+  }
+
+  async removeMusicV2PlaylistItem(playlistId: string, songId: string): Promise<void> {
+    await this.withRetry(() => this.adapter.hDel(this.musicV2PlaylistItemsKey(playlistId), songId));
+    const items = await this.listMusicV2PlaylistItems(playlistId);
+    await this.updateMusicV2Playlist(playlistId, {
+      song_count: items.length,
+      cover: items[0]?.cover || '',
+    });
+  }
+
+  async listMusicV2PlaylistItems(playlistId: string): Promise<MusicV2PlaylistItem[]> {
+    const rows = await this.withRetry(() => this.adapter.hGetAll(this.musicV2PlaylistItemsKey(playlistId)));
+    return Object.values(rows || {})
+      .filter(Boolean)
+      .map(value => JSON.parse(value as string) as MusicV2PlaylistItem)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.addedAt - b.addedAt);
+  }
+
+  async hasMusicV2PlaylistItem(playlistId: string, songId: string): Promise<boolean> {
+    const exists = await this.withRetry(() => this.adapter.hGet(this.musicV2PlaylistItemsKey(playlistId), songId));
     return exists !== null;
   }
 

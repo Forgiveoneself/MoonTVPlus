@@ -147,8 +147,8 @@ export default async function RootLayout({
     webLiveEnabled = config.WebLiveEnabled ?? false;
     // 自定义去广告代码版本号
     customAdFilterVersion = config.SiteConfig?.CustomAdFilterVersion || 0;
-    // TuneHub音乐功能配置
-    tuneHubEnabled = config.MusicConfig?.TuneHubEnabled || false;
+    // 音乐功能配置
+    tuneHubEnabled = config.MusicConfig?.Enabled || false;
     // 高级推荐功能配置：存在已启用视频源脚本时显示
     advancedRecommendationEnabled =
       (await listEnabledSourceScripts()).length > 0;
@@ -222,7 +222,7 @@ export default async function RootLayout({
     WEB_LIVE_ENABLED: webLiveEnabled,
     ADVANCED_RECOMMENDATION_ENABLED: advancedRecommendationEnabled,
     CUSTOM_AD_FILTER_VERSION: customAdFilterVersion,
-    TUNEHUB_ENABLED: tuneHubEnabled,
+    MUSIC_ENABLED: tuneHubEnabled,
     FESTIVE_EFFECT_ENABLED:
       process.env.FESTIVE_EFFECT_ENABLED === 'true',
   };

@@ -29,38 +29,20 @@ export async function POST(request: NextRequest) {
     const username = authInfo.username;
 
     const {
-      TuneHubEnabled,
-      TuneHubBaseUrl,
-      TuneHubApiKey,
-      OpenListCacheEnabled,
-      OpenListCacheURL,
-      OpenListCacheUsername,
-      OpenListCachePassword,
-      OpenListCachePath,
-      OpenListCacheProxyEnabled,
+      Enabled,
+      BaseUrl,
+      Token,
     } = body as {
-      TuneHubEnabled?: boolean;
-      TuneHubBaseUrl?: string;
-      TuneHubApiKey?: string;
-      OpenListCacheEnabled?: boolean;
-      OpenListCacheURL?: string;
-      OpenListCacheUsername?: string;
-      OpenListCachePassword?: string;
-      OpenListCachePath?: string;
-      OpenListCacheProxyEnabled?: boolean;
+      Enabled?: boolean;
+      BaseUrl?: string;
+      Token?: string;
     };
 
     // 参数校验
     if (
-      (TuneHubEnabled !== undefined && typeof TuneHubEnabled !== 'boolean') ||
-      (TuneHubBaseUrl !== undefined && typeof TuneHubBaseUrl !== 'string') ||
-      (TuneHubApiKey !== undefined && typeof TuneHubApiKey !== 'string') ||
-      (OpenListCacheEnabled !== undefined && typeof OpenListCacheEnabled !== 'boolean') ||
-      (OpenListCacheURL !== undefined && typeof OpenListCacheURL !== 'string') ||
-      (OpenListCacheUsername !== undefined && typeof OpenListCacheUsername !== 'string') ||
-      (OpenListCachePassword !== undefined && typeof OpenListCachePassword !== 'string') ||
-      (OpenListCachePath !== undefined && typeof OpenListCachePath !== 'string') ||
-      (OpenListCacheProxyEnabled !== undefined && typeof OpenListCacheProxyEnabled !== 'boolean')
+      (Enabled !== undefined && typeof Enabled !== 'boolean') ||
+      (BaseUrl !== undefined && typeof BaseUrl !== 'string') ||
+      (Token !== undefined && typeof Token !== 'string')
     ) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
@@ -77,15 +59,9 @@ export async function POST(request: NextRequest) {
 
     // 更新缓存中的音乐配置
     adminConfig.MusicConfig = {
-      TuneHubEnabled,
-      TuneHubBaseUrl,
-      TuneHubApiKey,
-      OpenListCacheEnabled,
-      OpenListCacheURL,
-      OpenListCacheUsername,
-      OpenListCachePassword,
-      OpenListCachePath,
-      OpenListCacheProxyEnabled,
+      Enabled,
+      BaseUrl,
+      Token,
     };
 
     // 写入数据库

@@ -3,6 +3,7 @@
 import { AdminConfig } from './admin.types';
 import { MusicPlayRecord } from './db.client';
 import { KvrocksStorage } from './kvrocks.db';
+import { MusicV2HistoryRecord, MusicV2PlaylistItem, MusicV2PlaylistRecord } from './music-v2';
 import { RedisStorage } from './redis.db';
 import { DanmakuFilterConfig,Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 import { UpstashRedisStorage } from './upstash.db';
@@ -265,6 +266,103 @@ export class DbManager {
 
   async clearAllMusicPlayRecords(userName: string): Promise<void> {
     await this.storage.clearAllMusicPlayRecords(userName);
+  }
+
+  // Music V2 历史记录相关
+  async listMusicV2History(userName: string): Promise<MusicV2HistoryRecord[]> {
+    if (typeof (this.storage as any).listMusicV2History === 'function') {
+      return (this.storage as any).listMusicV2History(userName);
+    }
+    return [];
+  }
+
+  async upsertMusicV2History(userName: string, record: MusicV2HistoryRecord): Promise<void> {
+    if (typeof (this.storage as any).upsertMusicV2History === 'function') {
+      await (this.storage as any).upsertMusicV2History(userName, record);
+    }
+  }
+
+  async batchUpsertMusicV2History(userName: string, records: MusicV2HistoryRecord[]): Promise<void> {
+    if (typeof (this.storage as any).batchUpsertMusicV2History === 'function') {
+      await (this.storage as any).batchUpsertMusicV2History(userName, records);
+    }
+  }
+
+  async deleteMusicV2History(userName: string, songId: string): Promise<void> {
+    if (typeof (this.storage as any).deleteMusicV2History === 'function') {
+      await (this.storage as any).deleteMusicV2History(userName, songId);
+    }
+  }
+
+  async clearMusicV2History(userName: string): Promise<void> {
+    if (typeof (this.storage as any).clearMusicV2History === 'function') {
+      await (this.storage as any).clearMusicV2History(userName);
+    }
+  }
+
+  // Music V2 歌单相关
+  async createMusicV2Playlist(
+    userName: string,
+    playlist: { id: string; name: string; description?: string; cover?: string; }
+  ): Promise<void> {
+    if (typeof (this.storage as any).createMusicV2Playlist === 'function') {
+      await (this.storage as any).createMusicV2Playlist(userName, playlist);
+    }
+  }
+
+  async getMusicV2Playlist(playlistId: string): Promise<MusicV2PlaylistRecord | null> {
+    if (typeof (this.storage as any).getMusicV2Playlist === 'function') {
+      return (this.storage as any).getMusicV2Playlist(playlistId);
+    }
+    return null;
+  }
+
+  async listMusicV2Playlists(userName: string): Promise<MusicV2PlaylistRecord[]> {
+    if (typeof (this.storage as any).listMusicV2Playlists === 'function') {
+      return (this.storage as any).listMusicV2Playlists(userName);
+    }
+    return [];
+  }
+
+  async updateMusicV2Playlist(
+    playlistId: string,
+    updates: { name?: string; description?: string; cover?: string; song_count?: number; }
+  ): Promise<void> {
+    if (typeof (this.storage as any).updateMusicV2Playlist === 'function') {
+      await (this.storage as any).updateMusicV2Playlist(playlistId, updates);
+    }
+  }
+
+  async deleteMusicV2Playlist(playlistId: string): Promise<void> {
+    if (typeof (this.storage as any).deleteMusicV2Playlist === 'function') {
+      await (this.storage as any).deleteMusicV2Playlist(playlistId);
+    }
+  }
+
+  async addMusicV2PlaylistItem(playlistId: string, item: MusicV2PlaylistItem): Promise<void> {
+    if (typeof (this.storage as any).addMusicV2PlaylistItem === 'function') {
+      await (this.storage as any).addMusicV2PlaylistItem(playlistId, item);
+    }
+  }
+
+  async removeMusicV2PlaylistItem(playlistId: string, songId: string): Promise<void> {
+    if (typeof (this.storage as any).removeMusicV2PlaylistItem === 'function') {
+      await (this.storage as any).removeMusicV2PlaylistItem(playlistId, songId);
+    }
+  }
+
+  async listMusicV2PlaylistItems(playlistId: string): Promise<MusicV2PlaylistItem[]> {
+    if (typeof (this.storage as any).listMusicV2PlaylistItems === 'function') {
+      return (this.storage as any).listMusicV2PlaylistItems(playlistId);
+    }
+    return [];
+  }
+
+  async hasMusicV2PlaylistItem(playlistId: string, songId: string): Promise<boolean> {
+    if (typeof (this.storage as any).hasMusicV2PlaylistItem === 'function') {
+      return (this.storage as any).hasMusicV2PlaylistItem(playlistId, songId);
+    }
+    return false;
   }
 
   // 音乐歌单相关方法

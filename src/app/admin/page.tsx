@@ -11524,6 +11524,166 @@ const AIConfigComponent = ({
   );
 };
 
+// 音乐配置组件
+const MusicConfigComponent = ({
+  config,
+  refreshConfig,
+}: {
+  config: AdminConfig | null;
+  refreshConfig: () => Promise<void>;
+}) => {
+  const { alertModal, showAlert, hideAlert } = useAlertModal();
+  const { isLoading, withLoading } = useLoadingState();
+  const [enabled, setEnabled] = useState(false);
+  const [baseUrl, setBaseUrl] = useState('');
+  const [token, setToken] = useState('');
+
+  useEffect(() => {
+    if (config?.MusicConfig) {
+      setEnabled(config.MusicConfig.Enabled || false);
+      setBaseUrl(config.MusicConfig.BaseUrl || '');
+      setToken(config.MusicConfig.Token || '');
+    }
+  }, [config]);
+
+  const handleSave = async () => {
+    await withLoading('saveMusicConfig', async () => {
+      try {
+        const normalizedBaseUrl = baseUrl.trim().replace(/\/$/, '');
+
+        if (enabled && !normalizedBaseUrl) {
+          throw new Error('启用音乐功能时必须填写 lxserver 地址');
+        }
+
+        const response = await fetch('/api/admin/music', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            Enabled: enabled,
+            BaseUrl: normalizedBaseUrl,
+            Token: token.trim(),
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || '保存失败');
+        }
+
+        showSuccess('音乐配置保存成功', showAlert);
+        await refreshConfig();
+      } catch (error) {
+        showError(error instanceof Error ? error.message : '保存失败', showAlert);
+        throw error;
+      }
+    });
+  };
+
+  return (
+    <div className='space-y-6'>
+      <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4'>
+        <div className='flex items-center gap-2 mb-2'>
+          <svg
+            className='w-5 h-5 text-blue-600 dark:text-blue-400'
+            fill='none'
+            stroke='currentColor'
+            viewBox='0 0 24 24'
+          >
+            <path
+              strokeLinecap='round'
+              strokeLinejoin='round'
+              strokeWidth={2}
+              d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3'
+            />
+          </svg>
+          <span className='text-sm font-medium text-blue-800 dark:text-blue-300'>
+            使用说明
+          </span>
+        </div>
+        <div className='text-sm text-blue-700 dark:text-blue-400 space-y-1'>
+          <p>• 音乐功能基于 lxserver 提供搜索、热搜、榜单、歌词与播放解析能力</p>
+          <p>• 建议填写服务端 Base URL 与持久 Token，由 MoonTV 服务端代为访问 lxserver</p>
+          <p>• 项目地址：<a href='https://github.com/XCQ0607/lxserver' target='_blank' rel='noreferrer' className='underline hover:text-blue-500'>https://github.com/XCQ0607/lxserver</a></p>
+        </div>
+      </div>
+
+      <div className='flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <div>
+          <h3 className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+            启用音乐功能
+          </h3>
+          <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+            关闭后不显示音乐入口，前端音乐页与接口将不可用
+          </p>
+        </div>
+        <label className='relative inline-flex items-center cursor-pointer'>
+          <input
+            type='checkbox'
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className='sr-only peer'
+          />
+          <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 dark:peer-focus:ring-green-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all dark:border-gray-600 peer-checked:bg-green-600"></div>
+        </label>
+      </div>
+
+      <div className='space-y-4'>
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            lxserver Base URL
+          </label>
+          <input
+            type='text'
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder='http://127.0.0.1:9527'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            例如： http://127.0.0.1:9527 或 https://music.example.com
+          </p>
+        </div>
+
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            x-user-token
+          </label>
+          <input
+            type='password'
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder='lx_tk_xxx'
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            推荐填写 lxserver 持久 Token；留空则按匿名访问处理
+          </p>
+        </div>
+      </div>
+
+      <div className='flex justify-end'>
+        <button
+          onClick={handleSave}
+          disabled={isLoading('saveMusicConfig')}
+          className={isLoading('saveMusicConfig') ? buttonStyles.disabled : buttonStyles.success}
+        >
+          {isLoading('saveMusicConfig') ? '保存中...' : '保存音乐配置'}
+        </button>
+      </div>
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={hideAlert}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        timer={alertModal.timer}
+        showConfirm={alertModal.showConfirm}
+      />
+    </div>
+  );
+};
+
 // 直播源配置组件
 const LiveSourceConfig = ({
   config,
@@ -12602,6 +12762,7 @@ function AdminPageClient() {
     userConfig: false,
     videoSource: false,
     sourceScriptLab: false,
+    musicConfig: false,
     mediaLibrary: false,
     openListConfig: false,
     netDiskConfig: false,
@@ -12971,6 +13132,31 @@ function AdminPageClient() {
               onToggle={() => toggleTab('sourceScriptLab')}
             >
               <VideoSourceScriptLab />
+            </CollapsibleTab>
+
+            <CollapsibleTab
+              title='音乐配置'
+              icon={
+                <svg
+                  width='20'
+                  height='20'
+                  viewBox='0 0 24 24'
+                  fill='none'
+                  stroke='currentColor'
+                  strokeWidth='2'
+                  strokeLinecap='round'
+                  strokeLinejoin='round'
+                  className='text-gray-600 dark:text-gray-400'
+                >
+                  <path d='M9 18V5l12-2v13' />
+                  <circle cx='6' cy='18' r='3' />
+                  <circle cx='18' cy='16' r='3' />
+                </svg>
+              }
+              isExpanded={expandedTabs.musicConfig}
+              onToggle={() => toggleTab('musicConfig')}
+            >
+              <MusicConfigComponent config={config} refreshConfig={fetchConfig} />
             </CollapsibleTab>
 
             {/* 电视直播源配置标签 */}

@@ -19,6 +19,7 @@ import {
 } from './types';
 import { AdminConfig } from './admin.types';
 import { DatabaseAdapter } from './d1-adapter';
+import { MusicV2HistoryRecord, MusicV2PlaylistItem, MusicV2PlaylistRecord } from './music-v2';
 
 /**
  * Vercel Postgres 存储实现
@@ -1371,6 +1372,301 @@ export class PostgresStorage implements IStorage {
       console.error('PostgresStorage.updatePlaylistSongOrder error:', err);
       throw err;
     }
+  }
+
+  // ==================== Music V2 历史记录相关 ====================
+
+  async listMusicV2History(userName: string): Promise<MusicV2HistoryRecord[]> {
+    try {
+      const results = await this.db
+        .prepare('SELECT * FROM music_v2_history WHERE username = $1 ORDER BY last_played_at DESC')
+        .bind(userName)
+        .all();
+
+      if (!results.results) return [];
+
+      return results.results.map((row: any) => ({
+        songId: row.song_id,
+        source: row.source,
+        songmid: row.songmid || undefined,
+        name: row.name,
+        artist: row.artist,
+        album: row.album || undefined,
+        cover: row.cover || undefined,
+        durationText: row.duration_text || undefined,
+        durationSec: row.duration_sec ?? undefined,
+        playProgressSec: row.play_progress_sec ?? 0,
+        lastPlayedAt: row.last_played_at,
+        playCount: row.play_count ?? 0,
+        lastQuality: row.last_quality || undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    } catch (err) {
+      console.error('PostgresStorage.listMusicV2History error:', err);
+      return [];
+    }
+  }
+
+  async upsertMusicV2History(userName: string, record: MusicV2HistoryRecord): Promise<void> {
+    try {
+      await this.db
+        .prepare(`
+          INSERT INTO music_v2_history (
+            username, song_id, source, songmid, name, artist, album, cover, duration_text, duration_sec,
+            play_progress_sec, last_played_at, play_count, last_quality, created_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          ON CONFLICT(username, song_id) DO UPDATE SET
+            source = EXCLUDED.source,
+            songmid = EXCLUDED.songmid,
+            name = EXCLUDED.name,
+            artist = EXCLUDED.artist,
+            album = EXCLUDED.album,
+            cover = EXCLUDED.cover,
+            duration_text = EXCLUDED.duration_text,
+            duration_sec = EXCLUDED.duration_sec,
+            play_progress_sec = EXCLUDED.play_progress_sec,
+            last_played_at = EXCLUDED.last_played_at,
+            play_count = EXCLUDED.play_count,
+            last_quality = EXCLUDED.last_quality,
+            updated_at = EXCLUDED.updated_at
+        `)
+        .bind(
+          userName,
+          record.songId,
+          record.source,
+          record.songmid || null,
+          record.name,
+          record.artist,
+          record.album || null,
+          record.cover || null,
+          record.durationText || null,
+          record.durationSec ?? null,
+          record.playProgressSec,
+          record.lastPlayedAt,
+          record.playCount,
+          record.lastQuality || null,
+          record.createdAt,
+          record.updatedAt
+        )
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.upsertMusicV2History error:', err);
+      throw err;
+    }
+  }
+
+  async batchUpsertMusicV2History(userName: string, records: MusicV2HistoryRecord[]): Promise<void> {
+    for (const record of records) {
+      await this.upsertMusicV2History(userName, record);
+    }
+  }
+
+  async deleteMusicV2History(userName: string, songId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM music_v2_history WHERE username = $1 AND song_id = $2')
+      .bind(userName, songId)
+      .run();
+  }
+
+  async clearMusicV2History(userName: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM music_v2_history WHERE username = $1')
+      .bind(userName)
+      .run();
+  }
+
+  // ==================== Music V2 歌单相关 ====================
+
+  async createMusicV2Playlist(userName: string, playlist: {
+    id: string;
+    name: string;
+    description?: string;
+    cover?: string;
+  }): Promise<void> {
+    const now = Date.now();
+    await this.db
+      .prepare(`
+        INSERT INTO music_v2_playlists (id, username, name, description, cover, song_count, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `)
+      .bind(playlist.id, userName, playlist.name, playlist.description || null, playlist.cover || null, 0, now, now)
+      .run();
+  }
+
+  async getMusicV2Playlist(playlistId: string): Promise<MusicV2PlaylistRecord | null> {
+    const row: any = await this.db
+      .prepare('SELECT * FROM music_v2_playlists WHERE id = $1')
+      .bind(playlistId)
+      .first();
+    if (!row) return null;
+    return {
+      id: row.id,
+      username: row.username,
+      name: row.name,
+      description: row.description || undefined,
+      cover: row.cover || undefined,
+      song_count: row.song_count ?? 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  async listMusicV2Playlists(userName: string): Promise<MusicV2PlaylistRecord[]> {
+    const results = await this.db
+      .prepare('SELECT * FROM music_v2_playlists WHERE username = $1 ORDER BY updated_at DESC')
+      .bind(userName)
+      .all();
+    if (!results.results) return [];
+    return results.results.map((row: any) => ({
+      id: row.id,
+      username: row.username,
+      name: row.name,
+      description: row.description || undefined,
+      cover: row.cover || undefined,
+      song_count: row.song_count ?? 0,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  }
+
+  async updateMusicV2Playlist(playlistId: string, updates: {
+    name?: string;
+    description?: string;
+    cover?: string;
+    song_count?: number;
+  }): Promise<void> {
+    const clauses: string[] = [];
+    const values: any[] = [];
+    let index = 1;
+    if (updates.name !== undefined) {
+      clauses.push(`name = $${index++}`);
+      values.push(updates.name);
+    }
+    if (updates.description !== undefined) {
+      clauses.push(`description = $${index++}`);
+      values.push(updates.description || null);
+    }
+    if (updates.cover !== undefined) {
+      clauses.push(`cover = $${index++}`);
+      values.push(updates.cover || null);
+    }
+    if (updates.song_count !== undefined) {
+      clauses.push(`song_count = $${index++}`);
+      values.push(updates.song_count);
+    }
+    clauses.push(`updated_at = $${index++}`);
+    values.push(Date.now());
+    values.push(playlistId);
+    await this.db
+      .prepare(`UPDATE music_v2_playlists SET ${clauses.join(', ')} WHERE id = $${index}`)
+      .bind(...values)
+      .run();
+  }
+
+  async deleteMusicV2Playlist(playlistId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM music_v2_playlists WHERE id = $1')
+      .bind(playlistId)
+      .run();
+  }
+
+  async addMusicV2PlaylistItem(playlistId: string, item: MusicV2PlaylistItem): Promise<void> {
+    const playlist = await this.getMusicV2Playlist(playlistId);
+    if (!playlist) {
+      throw new Error('歌单不存在');
+    }
+    const maxSort: any = await this.db
+      .prepare('SELECT MAX(sort_order) as max_sort FROM music_v2_playlist_items WHERE playlist_id = $1')
+      .bind(playlistId)
+      .first();
+    const nextOrder = Math.max(item.sortOrder || 0, (maxSort?.max_sort as number || 0) + 1);
+    const now = Date.now();
+
+    await this.db
+      .prepare(`
+        INSERT INTO music_v2_playlist_items (
+          playlist_id, username, song_id, source, songmid, name, artist, album, cover, duration_text, duration_sec, sort_order, added_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT(playlist_id, song_id) DO UPDATE SET
+          source = EXCLUDED.source,
+          songmid = EXCLUDED.songmid,
+          name = EXCLUDED.name,
+          artist = EXCLUDED.artist,
+          album = EXCLUDED.album,
+          cover = EXCLUDED.cover,
+          duration_text = EXCLUDED.duration_text,
+          duration_sec = EXCLUDED.duration_sec,
+          updated_at = EXCLUDED.updated_at
+      `)
+      .bind(
+        playlistId,
+        playlist.username,
+        item.songId,
+        item.source,
+        item.songmid || null,
+        item.name,
+        item.artist,
+        item.album || null,
+        item.cover || null,
+        item.durationText || null,
+        item.durationSec ?? null,
+        nextOrder,
+        item.addedAt || now,
+        now
+      )
+      .run();
+
+    const items = await this.listMusicV2PlaylistItems(playlistId);
+    await this.updateMusicV2Playlist(playlistId, {
+      song_count: items.length,
+      cover: items[0]?.cover || undefined,
+    });
+  }
+
+  async removeMusicV2PlaylistItem(playlistId: string, songId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM music_v2_playlist_items WHERE playlist_id = $1 AND song_id = $2')
+      .bind(playlistId, songId)
+      .run();
+    const items = await this.listMusicV2PlaylistItems(playlistId);
+    await this.updateMusicV2Playlist(playlistId, {
+      song_count: items.length,
+      cover: items[0]?.cover || undefined,
+    });
+  }
+
+  async listMusicV2PlaylistItems(playlistId: string): Promise<MusicV2PlaylistItem[]> {
+    const results = await this.db
+      .prepare('SELECT * FROM music_v2_playlist_items WHERE playlist_id = $1 ORDER BY sort_order ASC, added_at ASC')
+      .bind(playlistId)
+      .all();
+    if (!results.results) return [];
+    return results.results.map((row: any) => ({
+      playlistId: row.playlist_id,
+      songId: row.song_id,
+      source: row.source,
+      songmid: row.songmid || undefined,
+      name: row.name,
+      artist: row.artist,
+      album: row.album || undefined,
+      cover: row.cover || undefined,
+      durationText: row.duration_text || undefined,
+      durationSec: row.duration_sec ?? undefined,
+      sortOrder: row.sort_order,
+      addedAt: row.added_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  async hasMusicV2PlaylistItem(playlistId: string, songId: string): Promise<boolean> {
+    const row = await this.db
+      .prepare('SELECT 1 FROM music_v2_playlist_items WHERE playlist_id = $1 AND song_id = $2 LIMIT 1')
+      .bind(playlistId, songId)
+      .first();
+    return row !== null;
   }
 
   // ==================== 搜索历史 ====================
